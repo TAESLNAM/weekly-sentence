@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c8472f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="한 문장">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>주간 한 문장</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #222; --mute: #888; --red: #c8472f; --line: #d9d9d9; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #fff; color: var(--ink);
+    font-family: "Noto Serif KR", "Apple SD Gothic Neo", serif; line-height: 1.7;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  button { font: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
+
+  header { text-align: center; padding: 28px 16px 20px; }
+  h1 { margin: 0; font-size: 26px; font-weight: 700; color: var(--red); letter-spacing: -0.02em; }
+  .nav { margin-top: 8px; font-size: 14px; color: var(--mute); display: flex; justify-content: center; align-items: center; gap: 4px; }
+  .nav button { background: none; border: 0; color: var(--ink); padding: 8px 12px; }
+  .nav button:hover { color: var(--red); }
+
+  /* 로그인 */
+  #login { max-width: 320px; margin: 24px auto; padding: 0 16px; display: grid; gap: 10px; }
+  #login input {
+    font: inherit; font-size: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 0; outline: 0;
+  }
+  #login input:focus { border-color: var(--red); }
+  #login button { background: var(--red); color: #fff; border: 0; padding: 12px; }
+  #msg { color: var(--red); font-size: 13px; text-align: center; min-height: 1.4em; }
+
+  main { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0 8px; max-width: 1200px; margin: 0 auto; padding: 0 10px 48px; }
+  .day { min-width: 0; }
+  .day-head {
+    border-top: 1px solid var(--red); border-bottom: 1px solid var(--red);
+    text-align: center; color: var(--red); font-weight: 700; font-size: 17px; padding: 2px 0;
+  }
+  .day.today .day-head { background: var(--red); color: #fff; }
+  .date { text-align: center; margin: 22px 0 14px; font-size: 22px; font-weight: 600; }
+  .date small { display: block; color: var(--red); font-size: 13px; font-weight: 400; }
+
+  .entry {
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 12px 8px; min-height: 120px; font-size: 14px;
+    word-break: keep-all; overflow-wrap: anywhere; white-space: pre-wrap; cursor: pointer;
+  }
+  .entry:hover { background: #faf5f4; }
+  .entry.empty { color: #bbb; }
+  .entry textarea {
+    width: 100%; min-height: 120px; border: 0; outline: 0; resize: none;
+    font: inherit; font-size: 16px; color: inherit; background: transparent; padding: 0;
+  }
+  .bar { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; }
+  .bar .count { margin-right: auto; color: var(--mute); }
+  .bar .count.over { color: var(--red); font-weight: 700; }
+  .bar button { border: 1px solid var(--line); background: #fff; padding: 6px 12px; color: var(--ink); }
+  .bar .save { background: var(--red); border-color: var(--red); color: #fff; }
+  .bar .del { color: var(--red); }
+
+  footer { text-align: center; font-size: 12px; color: var(--mute); padding: 24px 16px 40px; border-top: 1px solid var(--line); }
+  footer button { background: none; border: 0; color: var(--mute); text-decoration: underline; margin: 0 8px; padding: 6px; }
+
+  @media (max-width: 760px) {
+    h1 { font-size: 22px; }
+    main { grid-template-columns: 1fr; gap: 0; padding: 0 16px 32px; }
+    .day { display: grid; grid-template-columns: 56px 1fr; column-gap: 12px; margin-bottom: 14px; }
+    .day-head { grid-column: 1 / -1; font-size: 14px; }
+    .date { margin: 8px 0; font-size: 20px; }
+    .entry { min-height: 72px; font-size: 15px; padding: 10px 4px; }
+    .entry textarea { min-height: 110px; }
+    .bar button { padding: 10px 14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>주간 한 문장</h1>
+  <div class="nav" id="nav" hidden>
+    <button id="prev" aria-label="지난 주">‹</button>
+    <span id="range"></span>
+    <button id="next" aria-label="다음 주">›</button>
+    <button id="thisweek">이번 주</button>
+  </div>
+</header>
+
+<form id="login" hidden>
+  <input id="email" type="email" placeholder="이메일" autocomplete="username" required>
+  <input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required>
+  <button>로그인</button>
+</form>
+<div id="msg"></div>
+
+<main id="week" hidden></main>
+
+<footer id="foot" hidden>
+  하루 한 문장, 140자까지
+  <br><br>
+  <button id="export">내보내기</button>
+  <button id="import">불러오기</button>
+  <button id="logout">로그아웃</button>
+  <input id="file" type="file" accept="application/json" hidden>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const MAX = 140;
+const HANJA = ["日", "月", "火", "水", "木", "金", "土"];
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const mondayOf = d => {
+  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
+  return m;
+};
+const say = t => { $("msg").textContent = t || ""; };
+
+if (!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY) {
+  say("config.js 에 Supabase URL과 anon key를 입력하세요.");
+  throw new Error("missing config");
+}
+const sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+let store = {};            // { 'YYYY-MM-DD': body } — 현재 보는 주
+let monday = mondayOf(new Date());
+const todayKey = keyOf(new Date());
+
+async function load() {
+  const days = weekDays();
+  const { data, error } = await sb.from("entries").select("day, body")
+    .gte("day", keyOf(days[0])).lte("day", keyOf(days[6]));
+  if (error) return say("불러오지 못했어요: " + error.message);
+  say();
+  store = Object.fromEntries(data.map(r => [r.day, r.body]));
+  render();
+}
+
+const weekDays = () => Array.from({ length: 7 }, (_, i) => {
+  const d = new Date(monday); d.setDate(monday.getDate() + i); return d;
+});
+
+function render() {
+  const days = weekDays();
+  $("range").textContent =
+    `${days[0].getFullYear()}.${pad(days[0].getMonth() + 1)}.${pad(days[0].getDate())} – ` +
+    `${pad(days[6].getMonth() + 1)}.${pad(days[6].getDate())}`;
+  $("week").innerHTML = "";
+  for (const d of days) {
+    const k = keyOf(d);
+    const col = document.createElement("section");
+    col.className = "day" + (k === todayKey ? " today" : "");
+    col.innerHTML = `<div class="day-head">${HANJA[d.getDay()]}</div>
+      <div class="date">${d.getDate()}<small>${d.getMonth() + 1}월</small></div>`;
+    const entry = document.createElement("div");
+    col.append(entry);
+    $("week").append(col);
+    show(entry, k);
+  }
+}
+
+function show(entry, k) {
+  entry.className = "entry" + (store[k] ? "" : " empty");
+  entry.textContent = store[k] || "＋";
+  entry.onclick = () => edit(entry, k);
+}
+
+function edit(entry, k) {
+  entry.className = "entry";
+  entry.onclick = null;
+  entry.innerHTML = `<textarea></textarea>
+    <div class="bar"><span class="count"></span>
+      ${store[k] ? '<button class="del" type="button">삭제</button>' : ""}
+      <button class="cancel" type="button">취소</button>
+      <button class="save" type="button">저장</button></div>`;
+  const ta = entry.querySelector("textarea");
+  const count = entry.querySelector(".count");
+  const save = entry.querySelector(".save");
+  ta.value = store[k] || "";
+
+  const update = () => {
+    const n = [...ta.value].length;
+    count.textContent = `${n} / ${MAX}`;
+    count.classList.toggle("over", n > MAX);
+    save.disabled = n > MAX;
+  };
+  const run = async (promise) => {
+    const { error } = await promise;
+    if (error) { say("저장 실패: " + error.message); return false; }
+    say(); return true;
+  };
+  ta.oninput = update;
+  ta.onkeydown = e => {
+    if (e.key === "Escape") show(entry, k);
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save.click();
+  };
+  entry.querySelector(".cancel").onclick = () => show(entry, k);
+  save.onclick = async () => {
+    const v = ta.value.trim();
+    if (!v) return entry.querySelector(".del")?.click() ?? show(entry, k);
+    save.disabled = true;
+    if (await run(sb.from("entries").upsert({ day: k, body: v, updated_at: new Date().toISOString() }))) {
+      store[k] = v; show(entry, k);
+    } else update();
+  };
+  const del = entry.querySelector(".del");
+  if (del) del.onclick = async () => {
+    if (!confirm("이 글을 삭제할까요?")) return;
+    if (await run(sb.from("entries").delete().eq("day", k))) { delete store[k]; show(entry, k); }
+  };
+  update();
+  ta.focus();
+}
+
+const shift = n => { monday.setDate(monday.getDate() + n); load(); };
+$("prev").onclick = () => shift(-7);
+$("next").onclick = () => shift(7);
+$("thisweek").onclick = () => { monday = mondayOf(new Date()); load(); };
+
+$("export").onclick = async () => {
+  const { data, error } = await sb.from("entries").select("day, body").order("day");
+  if (error) return say("내보내기 실패: " + error.message);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(Object.fromEntries(data.map(r => [r.day, r.body])), null, 2)], { type: "application/json" }));
+  a.download = `sentences-${todayKey}.json`;
+  a.click();
+};
+$("import").onclick = () => $("file").click();
+$("file").onchange = async e => {
+  try {
+    const obj = JSON.parse(await e.target.files[0].text());
+    const rows = Object.entries(obj).map(([day, body]) => ({ day, body: [...String(body)].slice(0, MAX).join("") }));
+    const { error } = await sb.from("entries").upsert(rows);
+    if (error) throw error;
+    load();
+  } catch (err) { say("불러오기 실패: " + (err.message || err)); }
+  e.target.value = "";
+};
+
+$("login").onsubmit = async e => {
+  e.preventDefault();
+  const { error } = await sb.auth.signInWithPassword({ email: $("email").value, password: $("pw").value });
+  if (error) say("로그인 실패: " + error.message);
+};
+$("logout").onclick = () => sb.auth.signOut();
+
+function gate(session) {
+  const on = !!session;
+  $("login").hidden = on;
+  for (const id of ["nav", "week", "foot"]) $(id).hidden = !on;
+  if (on) load(); else { store = {}; say(); }
+}
+sb.auth.onAuthStateChange((_ev, session) => gate(session));
+</script>
+</body>
+</html>

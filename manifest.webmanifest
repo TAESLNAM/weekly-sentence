@@ -1,0 +1,9 @@
+{
+  "name": "주간 한 문장",
+  "short_name": "한 문장",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#c8472f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
