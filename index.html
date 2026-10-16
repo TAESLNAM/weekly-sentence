@@ -29,8 +29,9 @@
   .nav button:hover { color: var(--red); }
 
   /* 로그인 */
-  #login { max-width: 320px; margin: 24px auto; padding: 0 16px; display: grid; gap: 10px; }
+  #login { max-width: 320px; margin: 24px auto; padding: 0 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
   #login input {
+    width: 100%; min-width: 0;
     font: inherit; font-size: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 0; outline: 0;
   }
   #login input:focus { border-color: var(--red); }
