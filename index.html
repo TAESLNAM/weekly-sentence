@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="한 문장">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>주간 한 문장</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -68,6 +69,7 @@
 
   footer { text-align: center; font-size: 12px; color: var(--mute); padding: 24px 16px 40px; border-top: 1px solid var(--line); }
   footer button { background: none; border: 0; color: var(--mute); text-decoration: underline; margin: 0 8px; padding: 6px; }
+  #backup.warn { color: var(--red); }
 
   @media (max-width: 760px) {
     h1 { font-size: 22px; }
@@ -108,6 +110,8 @@
   <button id="import">불러오기</button>
   <button id="logout">로그아웃</button>
   <input id="file" type="file" accept="application/json" hidden>
+  <br><br>
+  <span id="backup"></span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
@@ -135,13 +139,68 @@ let store = {};            // { 'YYYY-MM-DD': body } — 현재 보는 주
 let monday = mondayOf(new Date());
 const todayKey = keyOf(new Date());
 
+const CACHE_KEY = "ws-cache";      // 마지막으로 본 글 (오프라인 표시용)
+const PENDING_KEY = "ws-pending";  // 연결 전에 쓴 글 { day: body | null(삭제) }
+const META_KEY = "ws-meta";        // 백업 시각
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch (e) { return {}; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const isNetErr = err => !navigator.onLine || /fetch|network|load failed/i.test(err.message);
+
+const syncNote = () => {
+  const n = Object.keys(lsGet(PENDING_KEY)).length;
+  say(n ? `연결되면 자동 저장될 글 ${n}건` : "");
+};
+
+// body가 null이면 삭제. 결과: "ok" | "offline" | "error"
+async function persist(day, body) {
+  const q = body == null
+    ? sb.from("entries").delete().eq("day", day)
+    : sb.from("entries").upsert({ day, body, updated_at: new Date().toISOString() });
+  const { error } = await q;
+  if (!error) return "ok";
+  if (isNetErr(error)) return "offline";
+  say("저장 실패: " + error.message);
+  return "error";
+}
+
+async function flush() {
+  const p = lsGet(PENDING_KEY);
+  for (const [day, body] of Object.entries(p)) {
+    const r = await persist(day, body);
+    if (r === "offline") break;
+    delete p[day];   // ok, 또는 서버가 거절한 글(다시 시도해도 같은 결과)
+  }
+  lsSet(PENDING_KEY, p);
+}
+
+async function commit(day, body) {
+  const r = await persist(day, body);
+  if (r === "error") return false;
+  const c = lsGet(CACHE_KEY), p = lsGet(PENDING_KEY);
+  if (body == null) { delete store[day]; delete c[day]; } else { store[day] = c[day] = body; }
+  if (r === "offline") p[day] = body; else delete p[day];
+  lsSet(CACHE_KEY, c); lsSet(PENDING_KEY, p);
+  syncNote();
+  return true;
+}
+
 async function load() {
+  await flush();
   const days = weekDays();
   const { data, error } = await sb.from("entries").select("day, body")
     .gte("day", keyOf(days[0])).lte("day", keyOf(days[6]));
-  if (error) return say("불러오지 못했어요: " + error.message);
-  say();
+  if (error) {
+    if (!isNetErr(error)) return say("불러오지 못했어요: " + error.message);
+    const c = lsGet(CACHE_KEY);
+    store = Object.fromEntries(days.map(d => [keyOf(d), c[keyOf(d)]]).filter(([, v]) => v));
+    render();
+    return say("오프라인이에요. 저장된 글을 보여줘요.");
+  }
   store = Object.fromEntries(data.map(r => [r.day, r.body]));
+  const c = lsGet(CACHE_KEY);
+  for (const d of days) delete c[keyOf(d)];
+  lsSet(CACHE_KEY, Object.assign(c, store));
+  syncNote();
   render();
 }
 
@@ -193,11 +252,6 @@ function edit(entry, k) {
     count.classList.toggle("over", n > MAX);
     save.disabled = n > MAX;
   };
-  const run = async (promise) => {
-    const { error } = await promise;
-    if (error) { say("저장 실패: " + error.message); return false; }
-    say(); return true;
-  };
   ta.oninput = update;
   ta.onkeydown = e => {
     if (e.key === "Escape") show(entry, k);
@@ -208,14 +262,12 @@ function edit(entry, k) {
     const v = ta.value.trim();
     if (!v) return entry.querySelector(".del")?.click() ?? show(entry, k);
     save.disabled = true;
-    if (await run(sb.from("entries").upsert({ day: k, body: v, updated_at: new Date().toISOString() }))) {
-      store[k] = v; show(entry, k);
-    } else update();
+    if (await commit(k, v)) show(entry, k); else update();
   };
   const del = entry.querySelector(".del");
   if (del) del.onclick = async () => {
     if (!confirm("이 글을 삭제할까요?")) return;
-    if (await run(sb.from("entries").delete().eq("day", k))) { delete store[k]; show(entry, k); }
+    if (await commit(k, null)) show(entry, k);
   };
   update();
   ta.focus();
@@ -233,15 +285,35 @@ $("export").onclick = async () => {
   a.href = URL.createObjectURL(new Blob([JSON.stringify(Object.fromEntries(data.map(r => [r.day, r.body])), null, 2)], { type: "application/json" }));
   a.download = `sentences-${todayKey}.json`;
   a.click();
+  lsSet(META_KEY, { ...lsGet(META_KEY), lastExport: Date.now() });
+  updateBackup();
 };
+
+function updateBackup() {
+  const m = lsGet(META_KEY);
+  if (!m.since) { m.since = Date.now(); lsSet(META_KEY, m); }
+  const daysAgo = t => Math.floor((Date.now() - t) / 864e5);
+  const warn = daysAgo(m.lastExport || m.since) >= 30;
+  $("backup").textContent = (m.lastExport ? `마지막 백업: ${daysAgo(m.lastExport)}일 전` : "아직 백업한 적이 없어요")
+    + (warn ? " · 내보내기를 눌러 저장해 두세요" : "");
+  $("backup").classList.toggle("warn", warn);
+}
+
+const validDay = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s)) && new Date(s).toISOString().slice(0, 10) === s;
 $("import").onclick = () => $("file").click();
 $("file").onchange = async e => {
   try {
     const obj = JSON.parse(await e.target.files[0].text());
-    const rows = Object.entries(obj).map(([day, body]) => ({ day, body: [...String(body)].slice(0, MAX).join("") }));
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("형식이 올바르지 않아요");
+    const all = Object.entries(obj);
+    const rows = all
+      .filter(([day, body]) => validDay(day) && typeof body === "string" && body.trim())
+      .map(([day, body]) => ({ day, body: [...body.trim()].slice(0, MAX).join("") }));
+    if (!rows.length) throw new Error("가져올 글이 없어요");
     const { error } = await sb.from("entries").upsert(rows);
     if (error) throw error;
-    load();
+    await load();
+    say(`${rows.length}건을 불러왔어요` + (all.length > rows.length ? ` (${all.length - rows.length}건 제외)` : ""));
   } catch (err) { say("불러오기 실패: " + (err.message || err)); }
   e.target.value = "";
 };
@@ -257,9 +329,12 @@ function gate(session) {
   const on = !!session;
   $("login").hidden = on;
   for (const id of ["nav", "week", "foot"]) $(id).hidden = !on;
-  if (on) load(); else { store = {}; say(); }
+  if (on) { updateBackup(); load(); }
+  else { store = {}; say(); try { localStorage.removeItem(CACHE_KEY); } catch (e) {} }
 }
 sb.auth.onAuthStateChange((_ev, session) => gate(session));
+window.addEventListener("online", () => { if (!$("week").hidden) load(); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
